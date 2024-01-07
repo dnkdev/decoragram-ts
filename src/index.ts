@@ -1,16 +1,18 @@
-
-export class Dispatcher {
-    messageHandlers: { [key: string]: Function };
-    editedMessageHandlers: { [key: string]: Function };
-    channelPostHandlers: { [key: string]: Function };
-    editedChannelPostHandlers: { [key: string]: Function };
+type DecoragramAPI = AllHandlers & {
+    updateOffset: number
+}
+type AllHandlers = {
+    messageHandlers: Function[];
+    editedMessageHandlers: Function[];
+    channelPostHandlers: Function[];
+    editedChannelPostHandlers: Function[];
     messageReactionHandlers: Function[];
     messageReactionCountHandlers: Function[];
-    inlineQueryHandlers: { [key: string]: Function };
-    chosenInlineResultHandlers: { [key: string]: Function };
-    callbackQueryHandlers: { [key: string]: Function };
-    shippingQueryHandlers: { [key: string]: Function };
-    preCheckoutQueryHandlers: { [key: string]: Function };
+    inlineQueryHandlers: Function[];
+    chosenInlineResultHandlers: Function[];
+    callbackQueryHandlers: Function[];
+    shippingQueryHandlers: Function[];
+    preCheckoutQueryHandlers: Function[];
     pollHandlers: Function[];
     pollAnswerHandlers: Function[];
     myChatMemberHandlers: Function[];
@@ -18,283 +20,296 @@ export class Dispatcher {
     chatJoinRequestHandlers: Function[];
     chatBoostHandlers: Function[];
     removedChatBoostHandlers: Function[];
-    token: string;
-    pollingTimer: Timer | null;
-    updateOffset: number;
-    constructor(token?: string) {
-        this.messageHandlers = {};
-        this.editedMessageHandlers = {};
-        this.channelPostHandlers = {};
-        this.editedChannelPostHandlers = {};
-        this.messageReactionHandlers = [];
-        this.messageReactionCountHandlers = [];
-        this.inlineQueryHandlers = {};
-        this.chosenInlineResultHandlers = {};
-        this.callbackQueryHandlers = {};
-        this.shippingQueryHandlers = {};
-        this.preCheckoutQueryHandlers = {};
-        this.pollHandlers = [];
-        this.pollAnswerHandlers = [];
-        this.myChatMemberHandlers = [];
-        this.chatMemberHandlers = [];
-        this.chatJoinRequestHandlers = [];
-        this.chatBoostHandlers = [];
-        this.removedChatBoostHandlers = [];
-        this.updateOffset = 0;
-        this.pollingTimer = null;
-        if (token !== undefined) {
-            this.token = token
+}
+
+function handleUpdate<T extends DecoragramAPI>(bot: T, update: any) {
+    console.log('HANDLING...')
+    console.dir(update)
+    bot.updateOffset = update.update_id + 1
+    if ('message' in update) {
+        bot.messageHandlers.forEach((h: Function) => h.call(bot, update.message))
+    }
+    if ('edited_message' in update) {
+        bot.editedMessageHandlers.forEach((h: Function) => h.call(bot, update.edited_message))
+        return;
+    }
+    if ('channel_post' in update) {
+        bot.channelPostHandlers.forEach((h: Function) => h.call(bot, update.channel_post))
+        return;
+    }
+    if ('edited_channel_post' in update) {
+        bot.channelPostHandlers.forEach((h: Function) => h.call(bot, update.edited_channel_post))
+        return;
+    }
+    if ('message_reaction' in update) {
+        bot.messageReactionHandlers.forEach((h: Function) => h.call(bot, update.message_reaction))
+        return;
+    }
+    if ('message_reaction_count' in update) {
+        bot.messageReactionCountHandlers.forEach((h: Function) => h.call(bot, update.message_reaction_count))
+        return;
+    }
+    if ('inline_query' in update) {
+        bot.inlineQueryHandlers.forEach((h: Function) => h.call(bot, update.inline_query))
+        return;
+    }
+    if ('chosen_inline_result' in update) {
+        bot.chosenInlineResultHandlers.forEach((h: Function) => h.call(bot, update.chosen_inline_result))
+        return;
+    }
+    if ('callback_query' in update) {
+        bot.callbackQueryHandlers.forEach((h: Function) => h.call(bot, update.callback_query))
+        return;
+    }
+    if ('shipping_query' in update) {
+        bot.shippingQueryHandlers.forEach((h: Function) => h.call(bot, update.shipping_query))
+        return;
+    }
+    if ('pre_checkout_query' in update) {
+        bot.preCheckoutQueryHandlers.forEach((h: Function) => h.call(bot, update.pre_checkout_query))
+        return;
+    }
+    if ('poll' in update) {
+        bot.pollHandlers.forEach((h: Function) => h.call(bot, update.poll))
+        return;
+    }
+    if ('poll_answer' in update) {
+        bot.pollAnswerHandlers.forEach((h: Function) => h.call(bot, update.poll_answer))
+        return;
+    }
+    if ('my_chat_member' in update) {
+        bot.myChatMemberHandlers.forEach((h: Function) => h.call(bot, update.my_chat_member))
+        return;
+    }
+    if ('chat_member' in update) {
+        bot.chatMemberHandlers.forEach((h: Function) => h.call(bot, update.chat_member))
+        return;
+    }
+    if ('chat_join_request' in update) {
+        bot.chatJoinRequestHandlers.forEach((h: Function) => h.call(bot, update.chat_join_request))
+        return;
+    }
+    if ('chat_boost' in update) {
+        bot.chatBoostHandlers.forEach((h: Function) => h.call(bot, update.chat_boost))
+        return;
+    }
+    if ('removed_chat_boost' in update) {
+        bot.removedChatBoostHandlers.forEach((h: Function) => h.call(bot, update.removed_chat_boost))
+        return;
+    }
+}
+
+export async function sendApiRequest(bot: any, apiMethod: string, data: any) {
+    return await fetch(`https://api.telegram.org/bot${bot.token}/${apiMethod}`, {
+        method: 'POST',
+        headers: {
+            'content-type': 'application/json;charset=UTF-8',
+        },
+        body: JSON.stringify(data)
+    })
+}
+/**
+ * Class Decorator. Literally ads a property `token` to a class. Through a decorator though.
+ */
+export function withToken(token?: string) {
+    return function <T extends { new(...args: any[]): any }>(target: T, context: ClassDecoratorContext): T {
+        return class extends target {
+            token = token;
+            constructor(...args: any[]) {
+                super(...args);
+            }
         }
-        else {
-            console.error('[ERROR] token not found.')
-            this.token = ''
-            process.exit(1)
+    }
+}
+
+type startPollingArgs = { timeout?: number, offset?: number, limit?: number, allowed_updates?: string[] }
+
+export function startPolling(bot: any, args?: startPollingArgs) {
+    if (!bot.token) {
+        throw Error('field `token` value not found. Consider using a class decorator `@withToken(token)`')
+    }
+    console.log(`starting polling bot ${bot.token}`)
+    const pollHandlerFunc = async () => {
+        if (args) {
+            args.offset = bot.updateOffset
+        }
+        const res = await (await sendApiRequest(bot, 'getUpdates', args)).json()
+        if (res.ok) {
+            if (res.result.length > 0) {
+                console.debug(`Got ${res.result.length} update(s).`)
+                res.result.forEach((update: any) => {
+                    handleUpdate(bot, update)
+                })
+            }
+        } else {
+            console.error(`[ERROR] getUpdates ${res.error_code}: ${res.description}`)
+        }
+        console.dir(res)
+        // pollHandlerFunc()
+    }
+    setTimeout(pollHandlerFunc, 1)
+
+}
+class Dispatcher {
+    message = () => {
+        return function (target: any, _: ClassMethodDecoratorContext, desc?: PropertyDescriptor) {
+            if (!target.messageHandlers) {
+                target.messageHandlers = []
+            }
+            target.messageHandlers.push(desc?.value)
         }
     }
 
-    sendApiRequest = async (apiMethod: string, data: any) => {
-        return await fetch(`https://api.telegram.org/bot${this.token}/${apiMethod}`, {
-            method: 'POST',
-            headers: {
-                'content-type': 'application/json;charset=UTF-8',
-            },
-            body: JSON.stringify(data)
-        })
-    }
-    message = (cmd: string) => {
-        checkForDuplicates(cmd, this.messageHandlers)
-        return (target: any, property: string | symbol, descriptor: PropertyDescriptor) => {
-            this.messageHandlers[cmd] = descriptor.value
+    edited_message = () => {
+        return function (target: any, _: ClassMethodDecoratorContext, desc?: PropertyDescriptor) {
+            if (!target.editedMessageHandlers) {
+                target.editedMessageHandlers = []
+            }
+            target.editedMessageHandlers.push(desc?.value)
         }
     }
-    edited_message = (cmd: string) => {
-        checkForDuplicates(cmd, this.editedMessageHandlers)
-        return (target: any, property: string | symbol, descriptor: PropertyDescriptor) => {
-            this.editedMessageHandlers[cmd] = descriptor.value
+    channel_post = () => {
+        return function (target: any, _: ClassMethodDecoratorContext, desc?: PropertyDescriptor) {
+            if (!target.channelPostHandlers) {
+                target.channelPostHandlers = []
+            }
+            target.channelPostHandlers.push(desc?.value)
         }
     }
-    channel_post = (cmd: string) => {
-        checkForDuplicates(cmd, this.channelPostHandlers)
-        return (target: any, property: string | symbol, descriptor: PropertyDescriptor) => {
-            this.channelPostHandlers[cmd] = descriptor.value
-        }
-    }
-    edited_channel_post = (cmd: string) => {
-        checkForDuplicates(cmd, this.editedChannelPostHandlers)
-        return (target: any, property: string | symbol, descriptor: PropertyDescriptor) => {
-            this.editedChannelPostHandlers[cmd] = descriptor.value
+    edited_channel_post = () => {
+        return function (target: any, _: ClassMethodDecoratorContext, desc?: PropertyDescriptor) {
+            if (!target.editedChannelPostHandlers) {
+                target.messageHandlers = []
+            }
+            target.editedChannelPostHandlers.push(desc?.value)
         }
     }
     message_reaction = () => {
-        return (target: any, property: string | symbol, descriptor: PropertyDescriptor) => {
-            this.messageReactionHandlers.push(descriptor.value)
+        return function (target: any, _: ClassMethodDecoratorContext, desc?: PropertyDescriptor) {
+            if (!target.messageReactionHandlers) {
+                target.messageReactionHandlers = []
+            }
+            target.messageReactionHandlers.push(desc?.value)
         }
     }
     message_reaction_count = () => {
-        return (target: any, property: string | symbol, descriptor: PropertyDescriptor) => {
-            this.messageReactionCountHandlers.push(descriptor.value)
-        }
-    }
-    inline_query = (cmd: string) => {
-        checkForDuplicates(cmd, this.inlineQueryHandlers)
-        return (target: any, property: string | symbol, descriptor: PropertyDescriptor) => {
-            this.inlineQueryHandlers[cmd] = descriptor.value
-        }
-    }
-    chosen_inline_result = (cmd: string) => {
-        checkForDuplicates(cmd, this.chosenInlineResultHandlers)
-        return (target: any, property: string | symbol, descriptor: PropertyDescriptor) => {
-            this.chosenInlineResultHandlers[cmd] = descriptor.value
-        }
-    }
-    callback_query = (cmd: string) => {
-        checkForDuplicates(cmd, this.callbackQueryHandlers)
-        return (target: any, property: string | symbol, descriptor: PropertyDescriptor) => {
-            this.callbackQueryHandlers[cmd] = descriptor.value
-        }
-    }
-    shipping_query = (cmd: string) => {
-        checkForDuplicates(cmd, this.shippingQueryHandlers)
-        return (target: any, property: string | symbol, descriptor: PropertyDescriptor) => {
-            this.shippingQueryHandlers[cmd] = descriptor.value
-        }
-    }
-    pre_checkout_query = (cmd: string) => {
-        checkForDuplicates(cmd, this.preCheckoutQueryHandlers)
-        return (target: any, property: string | symbol, descriptor: PropertyDescriptor) => {
-            this.preCheckoutQueryHandlers[cmd] = descriptor.value
-        }
-    }
-    poll = (cmd: string) => {
-        return (target: any, property: string | symbol, descriptor: PropertyDescriptor) => {
-            this.pollHandlers.push(descriptor.value)
-        }
-    }
-    poll_answer = (cmd: string) => {
-        return (target: any, property: string | symbol, descriptor: PropertyDescriptor) => {
-            this.pollAnswerHandlers.push(descriptor.value)
-        }
-    }
-    my_chat_member = (cmd: string) => {
-        return (target: any, property: string | symbol, descriptor: PropertyDescriptor) => {
-            this.myChatMemberHandlers.push(descriptor.value)
-        }
-    }
-    chat_member = (cmd: string) => {
-        return (target: any, property: string | symbol, descriptor: PropertyDescriptor) => {
-            this.chatMemberHandlers.push(descriptor.value)
-        }
-    }
-    chat_join_request = (cmd: string) => {
-        return (target: any, property: string | symbol, descriptor: PropertyDescriptor) => {
-            this.chatJoinRequestHandlers.push(descriptor.value)
-        }
-    }
-    chat_boost = (cmd: string) => {
-        return (target: any, property: string | symbol, descriptor: PropertyDescriptor) => {
-            this.chatBoostHandlers.push(descriptor.value)
-        }
-    }
-    removed_chat_boost = (cmd: string) => {
-        return (target: any, property: string | symbol, descriptor: PropertyDescriptor) => {
-            this.removedChatBoostHandlers.push(descriptor.value)
-        }
-    }
-
-
-    startPolling = (params: any) => {
-        console.log('Start polling....')
-        if (!('timeout' in params)) {
-            params.timeout = 10
-        }
-        const pollHandler = async () => {
-            params.offset = this.updateOffset
-            const res = await (await this.sendApiRequest('getUpdates', params)).json()
-            if (res.ok) {
-                if (res.result.length > 0) {
-                    console.debug(`Got ${res.result.length} update(s).`)
-                    res.result.forEach((update: any) => {
-                        this.handleUpdate(update)
-                    })
-                }
-            } else {
-                console.error(`[ERROR] getUpdates ${res.error_code}: ${res.description}`)
+        return function (target: any, _: ClassMethodDecoratorContext, desc?: PropertyDescriptor) {
+            if (!target.messageReactionCountHandlers) {
+                target.messageReactionCountHandlers = []
             }
-            pollHandler()
+            target.messageReactionCountHandlers.push(desc?.value)
         }
-        setTimeout(pollHandler, 1)
     }
-    private handleUpdate(update: any): void {
-        this.updateOffset = update.update_id + 1
-        let cmd: string = '';
-        if ('message' in update) {
-            if ('text' in update.message) {
-                cmd = update.message.text;
-                if (this.messageHandlers.hasOwnProperty(cmd)) {
-                    this.messageHandlers[cmd](update.message)
-                }
+    inline_query = () => {
+        return function (target: any, _: ClassMethodDecoratorContext, desc?: PropertyDescriptor) {
+            if (!target.inlineQueryHandlers) {
+                target.inlineQueryHandlers = []
             }
-            else {
-                console.warn('unhandled message type.')
+            target.inlineQueryHandlers.push(desc?.value)
+        }
+    }
+    chosen_inline_result = () => {
+        return function (target: any, _: ClassMethodDecoratorContext, desc?: PropertyDescriptor) {
+            if (!target.chosenInlineResultHandlers) {
+                target.chosenInlineResultHandlers = []
             }
-            return;
+            target.chosenInlineResultHandlers.push(desc?.value)
         }
-        if ('edited_message' in update) {
-            if ('text' in update.edited_message) {
-                cmd = update.edited_message.text;
-                this.editedMessageHandlers[cmd](update.edited_message)
+    }
+    callback_query = () => {
+        return function (target: any, _: ClassMethodDecoratorContext, desc?: PropertyDescriptor) {
+            if (!target.callbackQueryHandlers) {
+                target.callbackQueryHandlers = []
             }
-            else {
-                console.warn('unhandled edited_message type.')
+            target.callbackQueryHandlers.push(desc?.value)
+        }
+    }
+    shipping_query = () => {
+        return function (target: any, _: ClassMethodDecoratorContext, desc?: PropertyDescriptor) {
+            if (!target.shippingQueryHandlers) {
+                target.shippingQueryHandlers = []
             }
-            return;
+            target.shippingQueryHandlers.push(desc?.value)
         }
-        if ('channel_post' in update) {
-            if ('text' in update.channel_post) {
-                cmd = update.channel_post.text
-                this.channelPostHandlers[cmd](update.channel_post)
+    }
+    pre_checkout_query = () => {
+        return function (target: any, _: ClassMethodDecoratorContext, desc?: PropertyDescriptor) {
+            if (!target.preCheckoutQueryHandlers) {
+                target.preCheckoutQueryHandlers = []
             }
-            else {
-                console.warn('unhandled channel_post type.')
+            target.preCheckoutQueryHandlers.push(desc?.value)
+        }
+    }
+    poll = () => {
+        return function (target: any, _: ClassMethodDecoratorContext, desc?: PropertyDescriptor) {
+            if (!target.pollHandlers) {
+                target.pollHandlers = []
             }
-            return;
+            target.pollHandlers.push(desc?.value)
         }
-        if ('edited_channel_post' in update) {
-            if ('text' in update.edited_channel_post) {
-                cmd = update.edited_channel_post.text
-                this.channelPostHandlers[cmd](update.edited_channel_post)
+    }
+    poll_answer = () => {
+        return function (target: any, _: ClassMethodDecoratorContext, desc?: PropertyDescriptor) {
+            if (!target.pollAnswerHandlers) {
+                target.pollAnswerHandlers = []
             }
-            else {
-                console.warn('unhandled edited_channel_post type.')
+            target.pollAnswerHandlers.push(desc?.value)
+        }
+    }
+    my_chat_member = () => {
+        return function (target: any, _: ClassMethodDecoratorContext, desc?: PropertyDescriptor) {
+            if (!target.myChatMemberHandlers) {
+                target.myChatMemberHandlers = []
             }
-            return;
+            target.myChatMemberHandlers.push(desc?.value)
         }
-        if ('message_reaction' in update) {
-            this.messageReactionHandlers.forEach((h: Function) => h(update.message_reaction))
-            return;
+    }
+    chat_member = () => {
+        return function (target: any, _: ClassMethodDecoratorContext, desc?: PropertyDescriptor) {
+            if (!target.chatMemberHandlers) {
+                target.chatMemberHandlers = []
+            }
+            target.chatMemberHandlers.push(desc?.value)
         }
-        if ('message_reaction_count' in update) {
-            this.messageReactionCountHandlers.forEach((h: Function) => h(update.message_reaction_count))
-            return;
+    }
+    chat_join_request = () => {
+        return function (target: any, _: ClassMethodDecoratorContext, desc?: PropertyDescriptor) {
+            if (!target.chatJoinRequestHandlers) {
+                target.chatJoinRequestHandlers = []
+            }
+            target.chatJoinRequestHandlers.push(desc?.value)
         }
-        if ('inline_query' in update) {
-            cmd = update.inline_query.query
-            this.inlineQueryHandlers[cmd](update.inline_query)
-            return;
+    }
+    chat_boost = () => {
+        return function (target: any, _: ClassMethodDecoratorContext, desc?: PropertyDescriptor) {
+            if (!target.chatBoostHandlers) {
+                target.chatBoostHandlers = []
+            }
+            target.chatBoostHandlers.push(desc?.value)
         }
-        if ('chosen_inline_result' in update) {
-            cmd = update.chosen_inline_result.query
-            this.chosenInlineResultHandlers[cmd](update.chosen_inline_result)
-            return;
-        }
-        if ('callback_query' in update) {
-            cmd = update.callback_query.data
-            this.callbackQueryHandlers[cmd](update.callback_query)
-            return;
-        }
-        if ('shipping_query' in update) {
-            cmd = update.shipping_query.invoice_payload
-            this.shippingQueryHandlers[cmd](update.shipping_query)
-            return;
-        }
-        if ('pre_checkout_query' in update) {
-            cmd = update.pre_checkout_query.invoice_payload
-            this.preCheckoutQueryHandlers[cmd](update.pre_checkout_query)
-            return;
-        }
-        if ('poll' in update) {
-            this.pollHandlers.forEach((h: Function) => h(update.poll))
-            return;
-        }
-        if ('poll_answer' in update) {
-            this.pollAnswerHandlers.forEach((h: Function) => h(update.poll_answer))
-            return;
-        }
-        if ('my_chat_member' in update) {
-            this.myChatMemberHandlers.forEach((h: Function) => h(update.my_chat_member))
-            return;
-        }
-        if ('chat_member' in update) {
-            this.chatMemberHandlers.forEach((h: Function) => h(update.chat_member))
-            return;
-        }
-        if ('chat_join_request' in update) {
-            this.chatJoinRequestHandlers.forEach((h: Function) => h(update.chat_join_request))
-            return;
-        }
-        if ('chat_boost' in update) {
-            this.chatBoostHandlers.forEach((h: Function) => h(update.chat_boost))
-            return;
-        }
-        if ('removed_chat_boost' in update) {
-            this.removedChatBoostHandlers.forEach((h: Function) => h(update.removed_chat_boost))
-            return;
+    }
+    removed_chat_boost = () => {
+        return function (target: any, _: ClassMethodDecoratorContext, desc?: PropertyDescriptor) {
+            if (!target.removedChatBoostHandlers) {
+                target.removedChatBoostHandlers = []
+            }
+            target.removedChatBoostHandlers.push(desc?.value)
         }
     }
 }
-function checkForDuplicates(cmd: string, instance: object): void {
-    if (cmd in instance) {
-        console.error(`[ERROR] handler property duplicate '${cmd}'`)
-        process.exit(2)
-    }
-}
+/**
+ * Decorators for methods which will handle specific update
+ */
+export var on = new Dispatcher()
+// export var on = {
+//     message: () => {
+//         return function (target: any, _: ClassMethodDecoratorContext, desc?: PropertyDescriptor) {
+//             if (!target.messageHandlers) {
+//                 target.messageHandlers = []
+//             }
+//             target.messageHandlers.push(
+//                 desc?.value
+//             )
+//         }
+//     }
+// }

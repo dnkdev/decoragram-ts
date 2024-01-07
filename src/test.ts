@@ -1,23 +1,16 @@
-import { Dispatcher } from './index.ts'
+import { withToken, startPolling, on } from './index.ts'
 
-let app = new Dispatcher(process.env.BOT_TOKEN)
+@withToken(process.env.BOT_TOKEN)
 class Bot {
-    @app.message('/start')
-    func(message: object) {
-        console.log("Hello!")
-    }
-    @app.message_reaction()
-    react(o: object) {
-        console.log('got reaction')
-        console.log(o)
-    }
-    @app.message('/hello')
-    @app.message('/hello2')
-    hello() {
-        console.log('Yes, Hello!')
+    count: number = 0;
+
+    @on.message()
+    handleMessages(message: any) {
+        console.log(`message count ${++this.count}`)
     }
 }
-app.startPolling({
-    allowed_updates: ["message", "message_reaction", "message_reaction_count"],
-    timeout: 30
-})
+
+let bot = new Bot()
+bot.count++
+
+startPolling(bot, { allowed_updates: ["message"] })
