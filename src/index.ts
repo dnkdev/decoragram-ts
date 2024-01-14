@@ -1,85 +1,61 @@
-import EventEmitter from 'node:events'
 
 type DecoragramAPI = {
     updateOffset: number,
-    ee: EventEmitter
+    _events: Map<Function, any>,
+    _handler: string
+}
+// const UpdateTypeC = ['message',
+//     'channel_post',
+//     'inline_query',
+//     'chosen_inline_result',
+//     'callback_query',
+//     'message_reaction',
+//     'message_reaction_count',
+//     'shipping_query',
+//     'pre_checkout_query',
+//     'edited_message',
+//     'edited_channel_post',
+//     'poll',
+//     'poll_answer',
+//     'my_chat_member',
+//     'chat_member',
+//     'chat_join_request',
+//     'chat_boost',
+//     'removed_chat_boost'] as const;
+
+export type UpdateType = 'message'
+    | 'channel_post'
+    | 'inline_query'
+    | 'chosen_inline_result'
+    | 'callback_query'
+    | 'message_reaction'
+    | 'message_reaction_count'
+    | 'shipping_query'
+    | 'pre_checkout_query'
+    | 'edited_message'
+    | 'edited_channel_post'
+    | 'poll'
+    | 'poll_answer'
+    | 'my_chat_member'
+    | 'chat_member'
+    | 'chat_join_request'
+    | 'chat_boost'
+    | 'removed_chat_boost'
+    ;
+
+interface Handler {
+    provision: (obj: any) => any
 }
 
-type UpdateTypes = [
-    'message'
-    , 'edited_message'
-    , 'channel_post'
-    , 'edited_channel_post'
-    , 'message_reaction'
-    , 'message_reaction_count'
-    , 'inline_query'
-    , 'chosen_inline_result'
-    , 'callback_query'
-    , 'shipping_query'
-    , 'pre_checkout_query'
-    , 'poll'
-    , 'poll_answer'
-    , 'my_chat_member'
-    , 'chat_member'
-    , 'chat_join_request'
-    , 'chat_boost'
-    , 'removed_chat_boost'
-];
-async function handleUpdate<T extends DecoragramAPI>(bot: T, update: any) {
-    // console.log('HANDLING...')
-    // console.dir(update)
-    bot.updateOffset = update.update_id + 1
-    for (const handler of ['message', 'channel_post', 'edited_message', 'edited_channel_post']) {
-        if (handler in update) {
-            for (const val of Object.keys(MessageType).filter(k => isNaN(Number(k)))) {
-                if (val in update.message) {
-                    bot.ee.emit(handler + '-' + val, bot, update.message)
-                }
-            }
-            return;
+export var on = (updType: UpdateType, comparable: any) => {
+    return function (target: any, _: ClassMethodDecoratorContext, desc?: PropertyDescriptor) {
+        // console.log(desc)
+        if (!target._events) {
+            target._events = new Map<Function, any>();
         }
-    }
-    if ('message_reaction' in update) {
-        return;
-    }
-    if ('message_reaction_count' in update) {
-        return;
-    }
-    if ('inline_query' in update) {
-        return;
-    }
-    if ('chosen_inline_result' in update) {
-        return;
-    }
-    if ('callback_query' in update) {
-        return;
-    }
-    if ('shipping_query' in update) {
-        return;
-    }
-    if ('pre_checkout_query' in update) {
-        return;
-    }
-    if ('poll' in update) {
-        return;
-    }
-    if ('poll_answer' in update) {
-        return;
-    }
-    if ('my_chat_member' in update) {
-        return;
-    }
-    if ('chat_member' in update) {
-        return;
-    }
-    if ('chat_join_request' in update) {
-        return;
-    }
-    if ('chat_boost' in update) {
-        return;
-    }
-    if ('removed_chat_boost' in update) {
-        return;
+        comparable._handler = updType;
+        target._events.set(desc?.value, comparable);
+        // console.log(target)
     }
 }
 
@@ -105,6 +81,62 @@ export function withToken(token?: string) {
         }
     }
 }
+const objectsDeepConverge = (original: any, compared: any): boolean => {
+    if (typeof original == 'object' && typeof compared == 'object') {
+        const keys = Object.keys(original)
+        for (const key of keys) {
+            if (key in compared) {
+                if (typeof compared[key] === "object") {
+                    if (!objectsDeepConverge(original[key], compared[key])) {
+                        return false;
+                    }
+                }
+                else if (typeof compared[key] === "boolean") {
+                    if (!compared[key] == Boolean(original[key])) {
+                        return false;
+                    }
+                }
+                else if (original[key] != compared[key]) {
+                    return false;
+                }
+            }
+        }
+    }
+    else {
+        throw Error('objectDeepConverge received not object instance. Probably the `comparable` differs from Telegram Bot API data.')
+    }
+    return true;
+}
+
+async function handleUpdate<T extends DecoragramAPI>(bot: T, update: any) {
+    bot.updateOffset = update.update_id + 1
+    bot._events.forEach((eventData, eventFunction) => {
+        const handler = eventData._handler;
+        if (handler && handler in update) {
+            const dataKeys = Object.keys(eventData)
+            for (const eventCondKey of dataKeys) {
+                if (Object.keys(update[handler]).includes(eventCondKey)) {
+                    const originalVal = update[handler][eventCondKey]
+                    const comparedVal = eventData[eventCondKey]
+                    if (typeof comparedVal == "boolean") {
+                        if (comparedVal != Boolean(originalVal)) {
+                            return;
+                        }
+                    }
+                    else if (typeof comparedVal == "object") {
+                        if (!objectsDeepConverge(originalVal, comparedVal)) {
+                            return;
+                        }
+                    }
+                    else if (comparedVal != originalVal) {
+                        return
+                    }
+                }
+            }
+            return eventFunction.call(bot, update[handler]);
+        }
+    })
+}
 type StartPollingArgs = { timeout?: number, offset?: number, limit?: number, allowed_updates?: string[] }
 
 export function startPolling(bot: any, pollingArgs?: StartPollingArgs) {
@@ -127,12 +159,14 @@ export function startPolling(bot: any, pollingArgs?: StartPollingArgs) {
     const pollHandlerFunc = async () => {
         // console.log(args)
         args.offset = bot.updateOffset
-        const res = await (await sendApiRequest(bot, 'getUpdates', args)).json()
+        const res: any = await (await sendApiRequest(bot, 'getUpdates', args)).json()
         if (res.ok) {
             if (res.result.length > 0) {
-                console.debug(`Got ${res.result.length} update(s).`)
+                // console.debug(`Got ${res.result.length} update(s).`)
                 res.result.forEach((update: any) => {
-                    handleUpdate(bot, update)
+                    setTimeout(
+                        handleUpdate, 0, bot, update
+                    )
                 })
             }
         } else {
@@ -144,234 +178,3 @@ export function startPolling(bot: any, pollingArgs?: StartPollingArgs) {
     }
     setTimeout(pollHandlerFunc, 1)
 }
-export enum MessageType {
-    text = 1 << 0,
-    animation = 1 << 1,
-    audio = 1 << 2,
-    document = 1 << 3,
-    photo = 1 << 4,
-    sticker = 1 << 5,
-    story = 1 << 6,
-    video = 1 << 7,
-    video_note = 1 << 8,
-    voice = 1 << 9,
-    caption = 1 << 10,
-    contact = 1 << 11,
-    dice = 1 << 12,
-    game = 1 << 13,
-    poll = 1 << 14,
-    venue = 1 << 15,
-    location = 1 << 16,
-    // all = text | animation | audio | document | photo | sticker | story | video | video_note | voice | caption | contact | dice | game | poll | venue | location
-}
-
-type MessageOptions = {
-    //'text | audio' | 'animation' | 'audio' | 'document' | 'photo' | 'sticker' | 'story' | 'video' | 'video_note' | 'voice' | 'caption' | 'contact' | 'dice' | 'game' | 'poll' | 'venue' | 'location'
-    is?: string,
-    startsWith?: string
-    contains?: string
-    middleware?: any
-}
-
-export var on = (type: MessageType) => {
-    return function (target: any, _: ClassMethodDecoratorContext, desc?: PropertyDescriptor) {
-        let listener = (t: any, data: any) => {
-            desc?.value.call(t, data)
-        }
-
-        if (!target.ee) {
-            target.ee = new EventEmitter()
-        }
-
-        for (const val of Object.keys(MessageType).filter(k => isNaN(Number(k)))) {
-            if (type & MessageType[val as keyof typeof MessageType]) {
-                target.ee.on('message-' + val, listener)
-            }
-        }
-        console.log('registered and ready to mingle')
-        // target.ee.on('message', listener)
-    }
-}
-
-// class Dispatcher {
-
-//     message = (type: MessageType, options?: MessageOptions) => {
-//         return function (target: any, _: ClassMethodDecoratorContext, desc?: PropertyDescriptor) {
-//             let listener = (t: any, message: any) => {
-//                 console.log('HELLO FROM MESSAGE')
-//                 desc?.value.call(t, message)
-//             }
-
-//             if (!target.ee) {
-//                 target.ee = new EventEmitter()
-//             }
-//             // let a = MessageType['text']
-//             // console.log(type & a)
-//             // if (type & MessageType.text) {
-//             //     target.ee.on('message-text', listener)
-//             // }
-//             for (const val of Object.keys(MessageType).filter(k => isNaN(Number(k)))) {
-//                 if (type & MessageType[val as keyof typeof MessageType]) {
-//                     console.log('yes ' + val)
-//                 }
-//             }
-
-//             target.ee.on('message', listener)
-//         }
-//     }
-
-//     edited_message = () => {
-//         return function (target: any, _: ClassMethodDecoratorContext, desc?: PropertyDescriptor) {
-//             if (!target.editedMessageHandlers) {
-//                 target.editedMessageHandlers = []
-//             }
-//             target.editedMessageHandlers.push(desc?.value)
-//         }
-//     }
-//     channel_post = () => {
-//         return function (target: any, _: ClassMethodDecoratorContext, desc?: PropertyDescriptor) {
-//             if (!target.channelPostHandlers) {
-//                 target.channelPostHandlers = []
-//             }
-//             target.channelPostHandlers.push(desc?.value)
-//         }
-//     }
-//     edited_channel_post = () => {
-//         return function (target: any, _: ClassMethodDecoratorContext, desc?: PropertyDescriptor) {
-//             if (!target.editedChannelPostHandlers) {
-//                 target.messageHandlers = []
-//             }
-//             target.editedChannelPostHandlers.push(desc?.value)
-//         }
-//     }
-//     message_reaction = () => {
-//         return function (target: any, _: ClassMethodDecoratorContext, desc?: PropertyDescriptor) {
-//             if (!target.messageReactionHandlers) {
-//                 target.messageReactionHandlers = []
-//             }
-//             target.messageReactionHandlers.push(desc?.value)
-//         }
-//     }
-//     message_reaction_count = () => {
-//         return function (target: any, _: ClassMethodDecoratorContext, desc?: PropertyDescriptor) {
-//             if (!target.messageReactionCountHandlers) {
-//                 target.messageReactionCountHandlers = []
-//             }
-//             target.messageReactionCountHandlers.push(desc?.value)
-//         }
-//     }
-//     inline_query = () => {
-//         return function (target: any, _: ClassMethodDecoratorContext, desc?: PropertyDescriptor) {
-//             if (!target.inlineQueryHandlers) {
-//                 target.inlineQueryHandlers = []
-//             }
-//             target.inlineQueryHandlers.push(desc?.value)
-//         }
-//     }
-//     chosen_inline_result = () => {
-//         return function (target: any, _: ClassMethodDecoratorContext, desc?: PropertyDescriptor) {
-//             if (!target.chosenInlineResultHandlers) {
-//                 target.chosenInlineResultHandlers = []
-//             }
-//             target.chosenInlineResultHandlers.push(desc?.value)
-//         }
-//     }
-//     callback_query = () => {
-//         return function (target: any, _: ClassMethodDecoratorContext, desc?: PropertyDescriptor) {
-//             if (!target.callbackQueryHandlers) {
-//                 target.callbackQueryHandlers = []
-//             }
-//             target.callbackQueryHandlers.push(desc?.value)
-//         }
-//     }
-//     shipping_query = () => {
-//         return function (target: any, _: ClassMethodDecoratorContext, desc?: PropertyDescriptor) {
-//             if (!target.shippingQueryHandlers) {
-//                 target.shippingQueryHandlers = []
-//             }
-//             target.shippingQueryHandlers.push(desc?.value)
-//         }
-//     }
-//     pre_checkout_query = () => {
-//         return function (target: any, _: ClassMethodDecoratorContext, desc?: PropertyDescriptor) {
-//             if (!target.preCheckoutQueryHandlers) {
-//                 target.preCheckoutQueryHandlers = []
-//             }
-//             target.preCheckoutQueryHandlers.push(desc?.value)
-//         }
-//     }
-//     poll = () => {
-//         return function (target: any, _: ClassMethodDecoratorContext, desc?: PropertyDescriptor) {
-//             if (!target.pollHandlers) {
-//                 target.pollHandlers = []
-//             }
-//             target.pollHandlers.push(desc?.value)
-//         }
-//     }
-//     poll_answer = () => {
-//         return function (target: any, _: ClassMethodDecoratorContext, desc?: PropertyDescriptor) {
-//             if (!target.pollAnswerHandlers) {
-//                 target.pollAnswerHandlers = []
-//             }
-//             target.pollAnswerHandlers.push(desc?.value)
-//         }
-//     }
-//     my_chat_member = () => {
-//         return function (target: any, _: ClassMethodDecoratorContext, desc?: PropertyDescriptor) {
-//             if (!target.myChatMemberHandlers) {
-//                 target.myChatMemberHandlers = []
-//             }
-//             target.myChatMemberHandlers.push(desc?.value)
-//         }
-//     }
-//     chat_member = () => {
-//         return function (target: any, _: ClassMethodDecoratorContext, desc?: PropertyDescriptor) {
-//             if (!target.chatMemberHandlers) {
-//                 target.chatMemberHandlers = []
-//             }
-//             target.chatMemberHandlers.push(desc?.value)
-//         }
-//     }
-//     chat_join_request = () => {
-//         return function (target: any, _: ClassMethodDecoratorContext, desc?: PropertyDescriptor) {
-//             if (!target.chatJoinRequestHandlers) {
-//                 target.chatJoinRequestHandlers = []
-//             }
-//             target.chatJoinRequestHandlers.push(desc?.value)
-//         }
-//     }
-//     chat_boost = () => {
-//         return function (target: any, _: ClassMethodDecoratorContext, desc?: PropertyDescriptor) {
-//             if (!target.chatBoostHandlers) {
-//                 target.chatBoostHandlers = []
-//             }
-//             target.chatBoostHandlers.push(desc?.value)
-//         }
-//     }
-//     removed_chat_boost = () => {
-//         return function (target: any, _: ClassMethodDecoratorContext, desc?: PropertyDescriptor) {
-//             if (!target.removedChatBoostHandlers) {
-//                 target.removedChatBoostHandlers = []
-//             }
-//             target.removedChatBoostHandlers.push(desc?.value)
-//         }
-//     }
-// }
-/**
- * Decorators for methods which will handle specific update
- */
-// export var on = new Dispatcher()
-
-
-// export var on = {
-//     message: () => {
-//         return function (target: any, _: ClassMethodDecoratorContext, desc?: PropertyDescriptor) {
-//             if (!target.messageHandlers) {
-//                 target.messageHandlers = []
-//             }
-//             target.messageHandlers.push(
-//                 desc?.value
-//             )
-//         }
-//     }
-// }

@@ -1,35 +1,15 @@
-import { withToken, startPolling, on, MessageType } from './index.ts'
+import { withToken, startPolling, on } from './index'
 
 @withToken(process.env.BOT_TOKEN)
 class Bot {
-    count: number = 0;
-
-    @on(MessageType.text)
-    handleMessages1(message: any) {
-        console.log(`message1 count ${++this.count}`)
-        if (message.text == '/start') {
-            console.log(`start from ${message.from.username}`)
-        }
+    state: number = 0;
+    constructor() {
+        this.state = 0;
     }
-
-    // @on.message()
-    // async handleMessages2(message: any) {
-    //     console.log(`message2 count ${++this.count}`)
-    //     if (message.text == '/start') {
-    //         console.log(`start from ${message.from.username}`)
-    //     }
-    // }
-
-    // @on.message()
-    // async handleMessages(message: any) {
-    //     console.log(`message3 count ${++this.count}`)
-    //     if (message.text == '/start') {
-    //         console.log(`start from ${message.from.username}`)
-    //     }
-    // }
+    @on('message', { text: true, from: { is_bot: false }, chat: { type: 'private' } })
+    handleMessage() {
+        console.log('hello handler')
+    }
 }
-
-let bot = new Bot()
-bot.count++
-
-startPolling(bot, { timeout: 11, allowed_updates: ["message"] })
+let bot = new Bot();
+startPolling(bot, { 'allowed_updates': ['message'] })
