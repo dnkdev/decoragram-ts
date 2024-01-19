@@ -1,27 +1,8 @@
 
 type DecoragramAPI = {
     updateOffset: number,
-    _events: Map<Function, any>,
-    _handler: string
+    _events: Map<Function, any>
 }
-// const UpdateTypeC = ['message',
-//     'channel_post',
-//     'inline_query',
-//     'chosen_inline_result',
-//     'callback_query',
-//     'message_reaction',
-//     'message_reaction_count',
-//     'shipping_query',
-//     'pre_checkout_query',
-//     'edited_message',
-//     'edited_channel_post',
-//     'poll',
-//     'poll_answer',
-//     'my_chat_member',
-//     'chat_member',
-//     'chat_join_request',
-//     'chat_boost',
-//     'removed_chat_boost'] as const;
 
 export type UpdateType = 'message'
     | 'channel_post'
@@ -43,19 +24,32 @@ export type UpdateType = 'message'
     | 'removed_chat_boost'
     ;
 
-interface Handler {
-    provision: (obj: any) => any
-}
 
-export var on = (updType: UpdateType, comparable: any) => {
-    return function (target: any, _: ClassMethodDecoratorContext, desc?: PropertyDescriptor) {
-        // console.log(desc)
+type UpdateResponseObject = { [key: string | symbol]: any }
+type Handler<T extends UpdateResponseObject> = (response: T, ...args: any[]) => void
+type ErrorHandler = (updateData: any, err: any) => void
+
+
+/** 
+ * Main decorator for declaring a method which will handle specified type of update.
+ * @param updType type of update
+ * @param comparable "filter" object, if existed field doesn't converge with existed received update field, handler won't be called
+ * @param errorHandler Function for catching throwed errors from update handler (catching throwed errors from your method which have `on` decorator)
+ * */
+export function on<T extends UpdateResponseObject>(updType: UpdateType, comparable?: Record<string, any>, errorHandler?: ErrorHandler) {
+    return function (target: Handler<T>, _: ClassMethodDecoratorContext, desc?: PropertyDescriptor) {
+        // @ts-ignore
         if (!target._events) {
+            // @ts-ignore
             target._events = new Map<Function, any>();
         }
-        comparable._handler = updType;
+        comparable = comparable ?? {}
+        comparable._updateType = updType;
+        if (errorHandler) {
+            comparable._errorHandler = errorHandler
+        }
+        // @ts-ignore
         target._events.set(desc?.value, comparable);
-        // console.log(target)
     }
 }
 
@@ -111,12 +105,12 @@ const objectsDeepConverge = (original: any, compared: any): boolean => {
 async function handleUpdate<T extends DecoragramAPI>(bot: T, update: any) {
     bot.updateOffset = update.update_id + 1
     bot._events.forEach((eventData, eventFunction) => {
-        const handler = eventData._handler;
-        if (handler && handler in update) {
+        const updateType = eventData._updateType;
+        if (updateType && updateType in update) {
             const dataKeys = Object.keys(eventData)
             for (const eventCondKey of dataKeys) {
-                if (Object.keys(update[handler]).includes(eventCondKey)) {
-                    const originalVal = update[handler][eventCondKey]
+                if (eventCondKey in update[updateType]) {
+                    const originalVal = update[updateType][eventCondKey]
                     const comparedVal = eventData[eventCondKey]
                     if (typeof comparedVal == "boolean") {
                         if (comparedVal != Boolean(originalVal)) {
@@ -129,11 +123,20 @@ async function handleUpdate<T extends DecoragramAPI>(bot: T, update: any) {
                         }
                     }
                     else if (comparedVal != originalVal) {
-                        return
+                        return;
                     }
                 }
             }
-            return eventFunction.call(bot, update[handler]);
+            if (!eventData._errorHandler) {
+                return eventFunction.call(bot, update[updateType])
+            }
+            else {
+                try {
+                    return eventFunction.call(bot, update[updateType]);
+                } catch (e) {
+                    return eventData._errorHandler.call(bot, update[updateType], e)
+                }
+            }
         }
     })
 }
@@ -148,14 +151,13 @@ export function startPolling(bot: any, pollingArgs?: StartPollingArgs) {
     }
     console.log(`Start polling updates...`)
 
-    let args: Required<StartPollingArgs> = {
+    const args: Required<StartPollingArgs> = {
         timeout: pollingArgs?.timeout ?? 10,
         offset: pollingArgs?.offset ?? 0,
         limit: pollingArgs?.limit ?? 100,
         allowed_updates: pollingArgs?.allowed_updates ?? ['message']
     }
 
-    bot.updateOffset = bot.updateOffset ?? 0
     const pollHandlerFunc = async () => {
         // console.log(args)
         args.offset = bot.updateOffset
@@ -163,11 +165,11 @@ export function startPolling(bot: any, pollingArgs?: StartPollingArgs) {
         if (res.ok) {
             if (res.result.length > 0) {
                 // console.debug(`Got ${res.result.length} update(s).`)
-                res.result.forEach((update: any) => {
+                for (const update of res.result) {
                     setTimeout(
                         handleUpdate, 0, bot, update
                     )
-                })
+                }
             }
         } else {
             console.error(`[ERROR] getUpdates ${res.error_code}: ${res.description}`)

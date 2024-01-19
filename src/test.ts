@@ -1,4 +1,12 @@
-import { withToken, startPolling, on } from './index'
+import { withToken, startPolling, on } from './index';
+
+type Message = {
+    text: string
+}
+
+function errorHandler(data: any, err: any) {
+    console.log('I\'m handling error!')
+}
 
 @withToken(process.env.BOT_TOKEN)
 class Bot {
@@ -6,9 +14,16 @@ class Bot {
     constructor() {
         this.state = 0;
     }
-    @on('message', { text: true, from: { is_bot: false }, chat: { type: 'private' } })
-    handleMessage() {
-        console.log('hello handler')
+
+
+    @on(
+        'message',
+        {},
+        errorHandler
+    )
+    handleMessage(message: Message) {
+        console.log('hello handler ' + message.text)
+        throw Error('Boo')
     }
 }
 let bot = new Bot();
