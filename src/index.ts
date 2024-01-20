@@ -1,7 +1,13 @@
 
 type DecoragramAPI = {
     updateOffset: number,
-    _events: Map<Function, any>
+    _events: Map<Function, EventDataType>
+}
+
+type EventDataType = {
+    _updateType: string,
+    _comparableObject?: any
+    _errorHandler?: ErrorHandler,
 }
 
 export type UpdateType = 'message'
@@ -41,15 +47,21 @@ export function on<T extends UpdateResponseObject>(updType: UpdateType, comparab
         // @ts-ignore
         if (!target._events) {
             // @ts-ignore
-            target._events = new Map<Function, any>();
+            target._events = new Map<Function, EventDataType>();
         }
-        comparable = comparable ?? {}
-        comparable._updateType = updType;
+        // comparable = comparable ?? {}
+
+        let compObj: EventDataType = {
+            _updateType: updType
+        }
+        if (comparable) {
+            compObj._comparableObject = comparable
+        }
         if (errorHandler) {
-            comparable._errorHandler = errorHandler
+            compObj._errorHandler = errorHandler
         }
         // @ts-ignore
-        target._events.set(desc?.value, comparable);
+        target._events.set(desc?.value, compObj);
     }
 }
 
@@ -75,11 +87,12 @@ export function withToken(token?: string) {
         }
     }
 }
+
 const objectsDeepConverge = (original: any, compared: any): boolean => {
-    if (typeof original == 'object' && typeof compared == 'object') {
-        const keys = Object.keys(original)
+    if (typeof compared == 'object' && typeof original == 'object') {
+        const keys = Object.keys(compared)
         for (const key of keys) {
-            if (key in compared) {
+            if (key in original) {
                 if (typeof compared[key] === "object") {
                     if (!objectsDeepConverge(original[key], compared[key])) {
                         return false;
@@ -96,9 +109,6 @@ const objectsDeepConverge = (original: any, compared: any): boolean => {
             }
         }
     }
-    else {
-        throw Error('objectDeepConverge received not object instance. Probably the `comparable` differs from Telegram Bot API data.')
-    }
     return true;
 }
 
@@ -107,25 +117,8 @@ async function handleUpdate<T extends DecoragramAPI>(bot: T, update: any) {
     bot._events.forEach((eventData, eventFunction) => {
         const updateType = eventData._updateType;
         if (updateType && updateType in update) {
-            const dataKeys = Object.keys(eventData)
-            for (const eventCondKey of dataKeys) {
-                if (eventCondKey in update[updateType]) {
-                    const originalVal = update[updateType][eventCondKey]
-                    const comparedVal = eventData[eventCondKey]
-                    if (typeof comparedVal == "boolean") {
-                        if (comparedVal != Boolean(originalVal)) {
-                            return;
-                        }
-                    }
-                    else if (typeof comparedVal == "object") {
-                        if (!objectsDeepConverge(originalVal, comparedVal)) {
-                            return;
-                        }
-                    }
-                    else if (comparedVal != originalVal) {
-                        return;
-                    }
-                }
+            if (!objectsDeepConverge(update[updateType], eventData._comparableObject)) {
+                return;
             }
             if (!eventData._errorHandler) {
                 return eventFunction.call(bot, update[updateType])

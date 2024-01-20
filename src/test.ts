@@ -18,11 +18,11 @@ class Bot {
 
     @on(
         'message',
-        {},
+        { text: '/start' },
         errorHandler
     )
     handleMessage(message: Message) {
-        console.log('hello handler ' + message.text)
+        // console.log('hello handler ' + message.text)
         throw Error('Boo')
     }
 }
