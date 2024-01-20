@@ -1,4 +1,4 @@
-import { withToken, startPolling, on, sendFormDataRequest } from './index';
+import { withToken, startPolling, on, sendFormDataRequest } from '../src/index';
 
 function errorHandler(data: any, err: any) {
     console.log('Error message:')
@@ -13,6 +13,7 @@ class Bot {
         this.state = 0;
     }
 
+
     @on(
         'message',
         { text: '/start' },
@@ -26,11 +27,8 @@ class Bot {
     async sendDocument(message: any) {
         let res = await sendFormDataRequest(this, 'sendDocument', {
             chat_id: message.from.id,
-            document: Bun.file('./doc.txt'),
-            thumbnail: Bun.file('./Female.jpg')
-
+            document: Bun.file('./doc.txt')
         })
-        console.log(res)
     }
 
     @on('message', { text: '/media' }, errorHandler)

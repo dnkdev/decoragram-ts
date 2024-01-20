@@ -1,7 +1,10 @@
 # Based on https://raw.githubusercontent.com/github/gitignore/main/Node.gitignore
 
-# Logs
 archive
+*.txt
+*.jpg
+
+# Logs
 logs
 _.log
 npm-debug.log_

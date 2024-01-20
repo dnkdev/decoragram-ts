@@ -41,6 +41,7 @@ type ErrorHandler = (updateData: any, err: any) => void
  * @param updType type of update
  * @param comparable "filter" object, if existed field doesn't converge with existed received update field, handler won't be called
  * @param errorHandler Function for catching throwed errors from update handler (catching throwed errors from your method which have `on` decorator)
+ * @remarks `comparable` not type safe, but it suppose to converge with Telegram's Bot API structure of received update to work as filter.
  * */
 export function on<T extends UpdateResponseObject>(updType: UpdateType, comparable?: Record<string, any>, errorHandler?: ErrorHandler) {
     return function (target: Handler<T>, _: ClassMethodDecoratorContext, desc?: PropertyDescriptor) {
@@ -49,7 +50,6 @@ export function on<T extends UpdateResponseObject>(updType: UpdateType, comparab
             // @ts-ignore
             target._events = new Map<Function, EventDataType>();
         }
-        // comparable = comparable ?? {}
 
         let compObj: EventDataType = {
             _updateType: updType
@@ -65,8 +65,38 @@ export function on<T extends UpdateResponseObject>(updType: UpdateType, comparab
     }
 }
 
-export async function sendApiRequest(bot: any, apiMethod: string, data: any) {
-    return await fetch(`https://api.telegram.org/bot${bot.token}/${apiMethod}`, {
+export async function sendFormDataRequest(bot: any, apiMethod: string, data: any) {
+    let toSend = new FormData();
+    for (const key of Object.keys(data)) {
+        // atm array of files is passed only in sendGroupMedia, will this changes is unknown, so it's good
+        if (Array.isArray(data[key])) {
+            for (let i = 0; i < data[key].length; i++) {
+                if ('media' in data[key][i]) {
+                    const name = data[key][i]['media'].name
+                    toSend.append(name, data[key][i]['media'])
+                    data[key][i]['media'] = 'attach://' + name
+                }
+                if ('thumbnail' in data[key][i]) {
+                    const name = data[key][i]['thumbnail'].name + '-thumbnail'
+                    toSend.append(name, data[key][i]['thumbnail'])
+                    data[key][i]['thumbnail'] = 'attach://' + name
+                }
+            }
+            toSend.append(key, JSON.stringify(data[key]))
+        }
+        else {
+            toSend.append(key, data[key])
+        }
+    }
+
+    return fetch(`https://api.telegram.org/bot${bot.token}/${apiMethod}`, {
+        method: 'POST',
+        body: toSend
+    })
+}
+
+export async function sendRequest(bot: any, apiMethod: string, data: any) {
+    return fetch(`https://api.telegram.org/bot${bot.token}/${apiMethod}`, {
         method: 'POST',
         headers: {
             'content-type': 'application/json;charset=UTF-8',
@@ -154,7 +184,7 @@ export function startPolling(bot: any, pollingArgs?: StartPollingArgs) {
     const pollHandlerFunc = async () => {
         // console.log(args)
         args.offset = bot.updateOffset
-        const res: any = await (await sendApiRequest(bot, 'getUpdates', args)).json()
+        const res: any = await (await sendRequest(bot, 'getUpdates', args)).json()
         if (res.ok) {
             if (res.result.length > 0) {
                 // console.debug(`Got ${res.result.length} update(s).`)
@@ -167,7 +197,6 @@ export function startPolling(bot: any, pollingArgs?: StartPollingArgs) {
         } else {
             console.error(`[ERROR] getUpdates ${res.error_code}: ${res.description}`)
         }
-        // console.dir(res)
         setTimeout(pollHandlerFunc, 500)
 
     }
